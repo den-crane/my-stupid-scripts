@@ -18,14 +18,14 @@ pvVer=`pveversion|cut -c 1-15`
 if [ "$pvVer" == "pve-manager/3.4" ]
 then
   cntrCntZero=`(vzlist 2>&1|grep -c "Container(s) not found")||true`
-  if [ $cntrCntZero -eq 1 ]  
+  if [ $cntrCntZero -eq 1 ]
      then
-       vmlist=`qm list|awk '$3 == "running" {print $1"|"$2}'` 
+       vmlist=`qm list|awk '$3 == "running" {print $1"|"$2"|qemu"}'`
      else
-       vmlist=`vzlist |awk '$3 == "running" {print $1"|"$5}';qm list|awk '$3 == "running" {print $1"|"$2}'`
+       vmlist=`vzlist |awk '$3 == "running" {print $1"|"$5"|openvz"}';qm list|awk '$3 == "running" {print $1"|"$2"|qemu"}'`
   fi
-else 
-  vmlist=`qm list|awk '$3 == "running" {print $1"|"$2}'`  
+else
+  vmlist=`qm list|awk '$3 == "running" {print $1"|"$2"|qemu"}'`
 fi
 
 echo "Backup start `date`"
@@ -33,8 +33,9 @@ for vm in $vmlist;
 do 
     id=`echo $vm|awk -F"|" '{print $1}'`
     vmname=`echo $vm|awk -F"|" '{print $2}'`
-    awsfile=$targetdir/vzdump-$id-$vmname.vma.gz
-    echo "Backup of $id - $vmname to $awsfile started."
+    type=`echo $vm|awk -F"|" '{print $3}'`
+    awsfile=$targetdir/vzdump-$type-$id-$vmname.vma.gz
+    echo "Backup of $id - $vmname ($type) to $awsfile started."
     /usr/bin/vzdump $id -mode snapshot --dumpdir $tmpdir --compress gzip --quiet --stdout|pv -q --rate-limit $uploadspeed|$aws s3 cp - $awsfile
     echo ""
     echo "**************************************************"
