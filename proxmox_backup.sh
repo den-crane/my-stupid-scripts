@@ -15,7 +15,7 @@ logfile=/root/proxmox_backup_log/backup_$d.log
 
 pvVer=`pveversion|cut -c 1-15`
 
-if [ "$pvVer"=="pve-manager/3.4" ]
+if [ "$pvVer" == "pve-manager/3.4" ]
 then
   cntrCntZero=`(vzlist 2>&1|grep -c "Container(s) not found")||true`
   if [ $cntrCntZero -eq 1 ]  
