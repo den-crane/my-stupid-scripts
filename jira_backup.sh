@@ -80,10 +80,10 @@ then
 else
   echo "Cloud $target backup file download started `date`"
   echo "Source filename: $dnlUrl/$filename"
-  $curlcmd $dnlUrl/$filename | /root/bin/aws --region us-east-1 s3 cp - $dest --expected-size=100000000000
+  $curlcmd $dnlUrl/$filename | /root/bin/aws s3 cp - $dest --expected-size=100000000000
   echo "Cloud $target backup file download completed `date`"
   echo "Target filename: $dest"
-  tfilesize=`/root/bin/aws --region us-east-1 s3 ls $dest|awk '{print $3}'`
+  tfilesize=`/root/bin/aws s3 ls $dest|awk '{print $3}'`
   echo "Target filesize: $tfilesize"
 fi
 
