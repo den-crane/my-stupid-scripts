@@ -54,7 +54,7 @@ do
   strname=`${curlcmd} ${progressUrl}`
   filename=$(echo $strname|xmllint --xpath "string(//backupresult/@fileName)" - )
   alternativePercentage=$(echo $strname|xmllint --xpath "string(//backupresult/@alternativePercentage)" - )
-  percentage=$(echo $alternativePercentage|awk '{print $3}')
+  percentage=$(echo $alternativePercentage|awk '/Estimated progress/{print $3}')
   size=$(echo $strname|xmllint --xpath "string(//backupresult/@size)" - )
   currentStatus=$(echo $strname|xmllint --xpath "string(//backupresult/@currentStatus)" - )
   concurrentBackupInProgress=$(echo $strname|xmllint --xpath "string(//backupresult/@concurrentBackupInProgress)" - )
