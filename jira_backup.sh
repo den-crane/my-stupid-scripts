@@ -10,6 +10,16 @@ INSTANCE=corporation.atlassian.net
 S3BUCKET=s3://backupbucket
 sdate=`date +%Y%m%d`
 sdatetime=`date +%Y%m%d%H%M%S`
+limitrate=2M   # curl dl speed
+
+if [ -z "$*" ]; then
+  echo ""
+  echo  $0' -- Tool to backup cloud jira/wiki to s3 (1st arg = jira/wiki; 2nd arg = w/ attachments )'
+  echo ""
+  echo  $0' wiki true # backup wiki w/ attachments'
+  echo  $0' jira false # backup jira w/o attachments'
+  exit 1
+fi
 
 if [ "$1" == "wiki" ]; then
   target=wiki
@@ -35,7 +45,7 @@ withattachments=$2
 curl --silent --cookie-jar $cookiefln -X POST "https://${INSTANCE}/rest/auth/1/session" -d "{\"username\": \"$USERNAME\", \"password\": \"$PASSWORD\"}" -H 'Content-Type: application/json' --output /dev/null
 
 
-curlcmd='curl -L --silent --cookie '$cookiefln' --limit-rate 2M --header "X-Atlassian-Token: no-check"'
+curlcmd='curl -L --silent --cookie '$cookiefln' --limit-rate '$limitrate' --header "X-Atlassian-Token: no-check"'
 
 
 echo "Cloud $target backup start `date`" 
@@ -97,7 +107,7 @@ then
 else
   echo "Cloud $target backup file download started `date`"
   echo "Source filename: $dnlUrl$filename"
-  $curlcmd $dnlUrl$filename | /root/bin/aws --region us-east-1 s3 cp - $dest --expected-size=100000000000
+  $curlcmd $dnlUrl$filename | /root/bin/aws s3 cp - $dest --expected-size=100000000000
   echo "Cloud $target backup file download completed `date`"
   echo "Target filename: $dest"
   tfilesize=`/root/bin/aws --region us-east-1 s3 ls $dest|awk '{print $3}'`
