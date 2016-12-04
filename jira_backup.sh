@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 set -e
 set -o pipefail
 set -u
@@ -9,29 +9,37 @@ PASSWORD=xxxx
 INSTANCE=corporation.atlassian.net
 S3BUCKET=s3://backupbucket
 sdate=`date +%Y%m%d`
+sdatetime=`date +%Y%m%d%H%M%S`
 
 if [ "$1" == "wiki" ]; then
   target=wiki
   url=https://${INSTANCE}/wiki/rest/obm/1.0/runbackup
-  dest=$S3BUCKET/cloud-wiki/${sdate}/wiki-backup-${sdate}.zip
-  progressUrl=https://${INSTANCE}/${target}/rest/obm/1.0/getprogress
-  dnlUrl=https://${INSTANCE}/${target}/download
-  bkptimeout=300  # minutes (sleep 60)
+  dest=$S3BUCKET/cloud-wiki/${sdate}/wiki-backup-${sdatetime}.zip
+  progressUrl=https://${INSTANCE}/${target}/rest/obm/1.0/getprogress.json
+  dnlUrl=https://${INSTANCE}/${target}/download/
+  cookiefln=wikicookie
+  bkptimeout=600  # minutes (sleep 60)
 else
   target=jira
   url=https://${INSTANCE}/rest/obm/1.0/runbackup
-  dest=$S3BUCKET/cloud-jira/${sdate}/jira-backup-${sdate}.zip
-  progressUrl=https://${INSTANCE}/rest/obm/1.0/getprogress
-  dnlUrl=https://${INSTANCE}/webdav/backupmanager
-  bkptimeout=300  # minutes (sleep 60)
+  dest=$S3BUCKET/cloud-jira/${sdate}/jira-backup-${sdatetime}.zip
+  progressUrl=https://${INSTANCE}/rest/obm/1.0/getprogress.json
+  dnlUrl=https://${INSTANCE}
+  cookiefln=jiracookie
+  bkptimeout=600  # minutes (sleep 60)
 fi
 
+rm -f $cookiefln
 withattachments=$2
-curlcmd='curl --silent --limit-rate 2M -u '$USERNAME':'$PASSWORD' --header "X-Atlassian-Token: no-check"'
+
+curl --silent --cookie-jar $cookiefln -X POST "https://${INSTANCE}/rest/auth/1/session" -d "{\"username\": \"$USERNAME\", \"password\": \"$PASSWORD\"}" -H 'Content-Type: application/json' --output /dev/null
 
 
-echo "Cloud $target backup start `date`"
-BKPMSG=`$curlcmd -H "X-Requested-With: XMLHttpRequest" -H "Content-Type: application/json" -X POST $url -d '{"cbAttachments":"'$withattachments'"}'`
+curlcmd='curl -L --silent --cookie '$cookiefln' --limit-rate 2M --header "X-Atlassian-Token: no-check"'
+
+
+echo "Cloud $target backup start `date`" 
+BKPMSG=`$curlcmd -H "X-Requested-With: XMLHttpRequest" -H "Content-Type: application/json" -X POST $url -d '{"cbAttachments":"'$withattachments'"}'` 
 
 if [[ ! -z $BKPMSG ]]; then
   echo ""
@@ -40,51 +48,61 @@ if [[ ! -z $BKPMSG ]]; then
   exit 1
 fi
 
-divider===================================
+divider==========================================
 divider=$divider$divider
-header="\n%8s %-30s %-10s\n"
-format="%8d %-30s %-10d\n"
-width=55
-printf "$header" "Percent" "Status" "Size"
+header="\n%-30s %-30s %-10s\n"
+format="%-30s %-30s %-10s\n"
+width=70
+printf "$header" "%" "Status" "Size"
 printf "%$width.${width}s\n" "$divider"
 prevstr=""
-
+success=false
+ 
 for (( c=1; c<=$bkptimeout; c++ ))
 do
   strname=`${curlcmd} ${progressUrl}`
-  filename=$(echo $strname|xmllint --xpath "string(//backupresult/@fileName)" - )
-  alternativePercentage=$(echo $strname|xmllint --xpath "string(//backupresult/@alternativePercentage)" - )
-  percentage=$(echo $alternativePercentage|awk '/Estimated progress/{print $3}/Progress/{print 0}')
-  size=$(echo $strname|xmllint --xpath "string(//backupresult/@size)" - )
-  currentStatus=$(echo $strname|xmllint --xpath "string(//backupresult/@currentStatus)" - )
-  concurrentBackupInProgress=$(echo $strname|xmllint --xpath "string(//backupresult/@concurrentBackupInProgress)" - )
-  #echo $concurrentBackupInProgress $percentage $currentStatus $size $filename
-  #echo "Percent: $percentage   Status: $currentStatus   Size: $size"
-  nextstr=$percentage"$currentStatus"$size
+#  echo ""
+#  echo $strname
+#  echo ""
+  filename=$(echo $strname|jq -r '.fileName')
+  failedMessage=$(echo $strname|jq -r '.failedMessage')
+  alternativePercentage=$(echo $strname|jq -r '.alternativePercentage')
+  size=$(echo $strname|jq -r '.size' )
+  currentStatus=$(echo $strname|jq -r '.currentStatus')
+  concurrentBackupInProgress=$(echo $strname|jq -r '.concurrentBackupInProgress')
+  nextstr=$"$alternativePercentage""$currentStatus"
   if [[ $prevstr != $nextstr ]]; then
-    printf "$format" $percentage "$currentStatus" $size
+    printf "$format" "$alternativePercentage" "$currentStatus" $size
     prevstr=$nextstr
   fi
 
-  if [[ $percentage -eq 100 ]]; then
+  if [[ $failedMessage != null ]]; then
+     echo "Error: "$failedMessage". Status: "$currentStatus
+     exit 1
+  fi
+
+  if [[ $filename != null ]]; then
+     success=true
      break
   fi
+
   sleep 60
 done
 
-echo ""
-if [ $percentage -ne 100 ];
+echo "" 
+if [ $success != true ];
 then
   echo "Error: Waiting for backup end too long."
   exit 1
 else
   echo "Cloud $target backup file download started `date`"
-  echo "Source filename: $dnlUrl/$filename"
-  $curlcmd $dnlUrl/$filename | /root/bin/aws s3 cp - $dest --expected-size=100000000000
+  echo "Source filename: $dnlUrl$filename"
+  $curlcmd $dnlUrl$filename | /root/bin/aws --region us-east-1 s3 cp - $dest --expected-size=100000000000
   echo "Cloud $target backup file download completed `date`"
   echo "Target filename: $dest"
-  tfilesize=`/root/bin/aws s3 ls $dest|awk '{print $3}'`
+  tfilesize=`/root/bin/aws --region us-east-1 s3 ls $dest|awk '{print $3}'`
   echo "Target filesize: $tfilesize"
 fi
 
+rm -f $cookiefln
 echo "Cloud $target backup end `date`"
